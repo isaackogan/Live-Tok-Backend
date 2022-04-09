@@ -26,7 +26,7 @@ class CheckAuthGenToken(AsyncResponse):
 
         # Get from Redis
         if auth is None:
-            self._status, self._payload = 401, None
+            self._status, self._payload = 404, None
             return self
 
         # Scrape User Data TODO REMEMBER TO STOP USING CACHE LOL
@@ -37,7 +37,7 @@ class CheckAuthGenToken(AsyncResponse):
 
         # Authenticate user
         signature: str = user_data.payload["signature"]
-        signature = "101743"
+        signature = "729434"
         if auth.decode("utf-8") not in signature:
             self._status, self._payload = 400, None
 

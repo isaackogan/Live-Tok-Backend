@@ -5,7 +5,7 @@ from typing import Optional
 
 import aioredis
 
-from live.live import LiveConnectionPool
+from livestuff.live import LiveConnectionPool
 from models.response import AsyncResponse
 
 
@@ -31,15 +31,7 @@ class ManageTrackingResponse(AsyncResponse):
 
         # Stop Stream
         if not self.start_or_stop:
-            if c:
-                try:
-                    del self.live.clients[username]
-                except KeyError:
-                    pass
-                await c.stop()
-
-            self._status, self._payload = 200, True
-            return self
+            await self.live.remove_client(username)
 
         # Already Connected
         if c:

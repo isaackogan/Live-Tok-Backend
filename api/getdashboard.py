@@ -5,7 +5,8 @@ from typing import Optional
 
 import aioredis
 
-from live.live import LiveConnectionPool
+from api.giveaways.gretrieve import RetrieveGiveawayResponse
+from livestuff.live import LiveConnectionPool
 from models.response import AsyncResponse
 
 
@@ -26,10 +27,12 @@ class GetDashboardData(AsyncResponse):
             return self
 
         username: str = username.decode("utf-8")
+        giveaway: RetrieveGiveawayResponse = await RetrieveGiveawayResponse(username=username, live=self.live, redis=self.redis).complete()
 
         data = {
             "unique_id": username,
-            "tracking": bool(self.live.clients.get(username))
+            "tracking": bool(self.live.clients.get(username)),
+            "giveaway": giveaway.payload
         }
 
         self._status, self._payload = 200, data

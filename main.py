@@ -1,6 +1,5 @@
 import asyncio
 import os
-import random
 from asyncio import AbstractEventLoop
 from typing import Mapping, List, Optional
 
@@ -10,19 +9,24 @@ import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
+from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
-from starlette.requests import Request
 
 import config
-from api.authgen import GenerateAuthToken
-from api.authgencheck import CheckAuthGenToken
+from api.authgen.authgen import GenerateAuthToken
+from api.authgen.authgencheck import CheckAuthGenToken
 from api.creator import TikTokCreatorResponse
 from api.getdashboard import GetDashboardData
+from api.giveaways.gcreate import CreateGiveawayResponse
+from api.giveaways.gdelete import DeleteGiveawayResponse
+from api.giveaways.gretrieve import RetrieveGiveawayResponse
+from api.giveaways.gupdate import UpdateGiveawayResponse
 from api.live import TikTokProfileLiveResponse
 from api.mantrack import ManageTrackingResponse
 from api.profile import TikTokProfileResponse
-from live.live import LiveConnectionPool
+from livestuff.live import LiveConnectionPool
 from models.mysql import create_template
+from models.payload import GiveawayConfig
 from models.response import FilledResponse
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -90,27 +94,47 @@ async def startup():
     await FastAPILimiter.init(app.redis)
 
 
-@app.get("/creator/auth/generate")
+@app.put("/creator/dashboard/giveaway", tags=['Giveaway'])
+async def create_giveaway(authorization: str, giveaway_config: GiveawayConfig):
+    return (await CreateGiveawayResponse(authorization=authorization, data=giveaway_config, redis=app.redis, live=app.live).complete()).serialize()
+
+
+@app.patch("/creator/dashboard/giveaway", tags=['Giveaway'])
+async def update_giveaway(authorization: str, giveaway_config: GiveawayConfig):
+    return (await UpdateGiveawayResponse(authorization=authorization, data=giveaway_config, redis=app.redis, live=app.live).complete()).serialize()
+
+
+@app.delete("/creator/dashboard/giveaway", tags=['Giveaway'])
+async def delete_giveaway(authorization: str, pick_winner: bool):
+    return (await DeleteGiveawayResponse(authorization=authorization, pick_winner=pick_winner, redis=app.redis, live=app.live).complete()).serialize()
+
+
+@app.get("/creator/giveaway", tags=['Giveaway'])
+async def get_giveaway(username: str):
+    return (await RetrieveGiveawayResponse(username=username, redis=app.redis, live=app.live).complete()).serialize()
+
+
+@app.get("/creator/auth/generate", tags=['Authentication'])
 async def gen_auth_code(client_id: str):
     return (await GenerateAuthToken(client_id=client_id, redis=app.redis).complete()).serialize()
 
 
-@app.post("/creator/auth/check")
+@app.post("/creator/auth/check", tags=['Authentication'])
 async def check_auth_code(client_id: str, username: str):
     return (await CheckAuthGenToken(username=username, client_id=client_id, redis=app.redis).complete()).serialize()
 
 
-@app.get("/creator/dashboard")
+@app.get("/creator/dashboard", tags=['Dashboard'])
 async def get_dashboard_data(authorization: str):
     return (await GetDashboardData(authorization=authorization, redis=app.redis, live=app.live).complete()).serialize()
 
 
-@app.post("/creator/dashboard/start")
+@app.post("/creator/dashboard/start", tags=['Dashboard'])
 async def start_tracking_data(authorization: str):
     return (await ManageTrackingResponse(authorization=authorization, redis=app.redis, live=app.live, start_or_stop=True).complete()).serialize()
 
 
-@app.post("/creator/dashboard/stop")
+@app.post("/creator/dashboard/stop", tags=['Dashboard'])
 async def stop_tracking_data(authorization: str):
     return (await ManageTrackingResponse(authorization=authorization, redis=app.redis, live=app.live, start_or_stop=False).complete()).serialize()
 
@@ -125,7 +149,7 @@ async def get_tiktok_user_live(username: str):
     return (await TikTokProfileLiveResponse(username=username).complete()).serialize()
 
 
-@app.get("/creator/statistics")
+@app.get("/creator/statistics", tags=['User'])
 async def get_creator_statistics(username: str):
     return (await TikTokCreatorResponse(username=username, sql_pool=app.sql_pool, redis=app.redis).complete()).serialize()
 
@@ -147,7 +171,12 @@ async def get_tiktok_user_page_data(username: str):
     leaderboard_data = await TikTokCreatorResponse(username=username, sql_pool=app.sql_pool, redis=app.redis).complete()
     payload["leaderboards"] = leaderboard_data.payload
 
+    # Get Giveaway Data
+    giveaway_data = (await RetrieveGiveawayResponse(username, app.live, app.redis).complete())
+    payload["giveaway"] = giveaway_data.payload
+
     return FilledResponse(status=user_data.status, payload=payload).serialize()
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=config.PORT, log_level="info", proxy_headers=True)

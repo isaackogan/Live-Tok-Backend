@@ -11,6 +11,7 @@ from TikTokLive.types import FailedConnection
 from TikTokLive.types.events import CommentEvent, GiftEvent
 
 import config
+from livestuff.giveaway import LiveGiveaways
 from utilities.statistics_sql import StatisticSQL
 
 
@@ -20,6 +21,23 @@ class LiveConnectionPool:
         self.sql_pool: aiomysql.Pool = sql_pool
         self.redis: aioredis.Redis = redis
         self.clients: Dict[str, TikTokLiveClient] = dict()
+        self.giveaways: LiveGiveaways = LiveGiveaways(asyncio.get_running_loop(), self.redis)
+
+    async def remove_client(self, username: str) -> bool:
+        c = self.clients.get(username)
+
+        try:
+            del self.clients[username]
+        except KeyError:
+            pass
+
+        try:
+            await c.stop()
+        except:
+            pass
+
+        self.giveaways.del_giveaway(username)
+        return True
 
     async def add_client(self, username: str) -> bool:
         client: TikTokLiveClient = TikTokLiveClient(unique_id=username, **{"process_initial_data": False, "enable_extended_gift_info": True})
@@ -30,6 +48,7 @@ class LiveConnectionPool:
             add_xp: int = random.randint(config.Leaderboard.MAX_ADD_CHAT_XP, config.Leaderboard.MAX_ADD_CHAT_XP)
             await self.redis.set(f"avatar:{event.user.uniqueId}", event.user.profilePicture.avatar_url, ex=14400)
             await sql.update_statistics(event.user.uniqueId, client.unique_id, 1, add_xp, 0)
+            self.giveaways.handle_comment(event, client.unique_id)
 
         @client.on("gift")
         async def _on_gift(event: GiftEvent):
@@ -53,8 +72,6 @@ class LiveConnectionPool:
             sql: StatisticSQL = StatisticSQL(self.sql_pool)
             await sql.update_statistics(event.user.uniqueId, client.unique_id, 0, add_xp, coins)
             await self.redis.set(f"avatar:{event.user.uniqueId}", event.user.profilePicture.avatar_url, ex=14400)
-
-            # TODO CHATLOG IN REDIS
 
         # Add the client
         try:
